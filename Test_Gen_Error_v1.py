@@ -112,7 +112,7 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
     import gc
     # Lets start with creating a model and then train batch wise.
     model = NN_class.learners()
-    model = model.init_NN_custom(classes, 0.01, [inputs,100, 100,100], tf.nn.relu,'EDL')
+    model = model.init_NN_custom(classes, 0.0001, [inputs,100, 100,100], tf.nn.relu,'EDL')
     acc_array = np.zeros( ( (Train_Glob_Iterations) , 1))
     try:
         count = 0        
@@ -161,14 +161,25 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
 ## Setup the parameters and call the functions
 Temp =[]
 Train_batch_size = 128
-Train_Glob_Iterations = 1
+Train_Glob_Iterations = 50
 import tflearn
 from tqdm import tqdm
 dataset = 'cifar10'
-X_train, y_train, X_test, y_test = import_pickled_data(dataset)
-classes = int(max(y_train)+1)
-y_train = tflearn.data_utils.to_categorical((y_train), classes)
-y_test  = tflearn.data_utils.to_categorical((y_test), classes)
+
+
+from tensorflow.examples.tutorials.mnist import input_data
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+X_train = mnist.train.images
+X_test = mnist.test.images
+y_train = mnist.train.labels
+y_test = mnist.test.labels
+print(X_test.shape, X_train.shape, y_train.shape, y_test.shape)
+# x = input()
+# X_train, y_train, X_test, y_test = import_pickled_data(dataset)
+classes = 10
+# y_train = tflearn.data_utils.to_categorical((y_train), classes)
+# y_test  = tflearn.data_utils.to_categorical((y_test), classes)
 from sklearn import preprocessing
 X_train = preprocessing.scale(X_train)
 X_test  = preprocessing.scale(X_test)

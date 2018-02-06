@@ -104,25 +104,26 @@ class learners():
 
             return flat
     
-    def grad_placeholder(self, layer_grad, loss_grad,  shape):
+    def grad_placeholder(self, layer_grad, loss_grad):
         with tf.variable_scope("radom_matrix_1"):
-            s, u, v = tf.svd(layer_grad, full_matrices=True)
-            # print("SVD done")
-            print("Before", s.get_shape(), v.get_shape(), u.get_shape())
-            print("After", s.get_shape(), v.get_shape(), u.get_shape())
-            rand_t  = tf.matmul(u, tf.matmul(tf.linalg.diag(s),\
-            v, adjoint_b=True))
-            print("rand shape", rand_t[0])
-            B = rand_t[0]
-            temp_B = B
-            print("Temp", B.get_shape())
+            s, u, v = tf.svd(layer_grad)
+            diag_mat = tf.linalg.diag(s);
+            mod_diag_mat = \
+                tf.add(diag_mat, tf.multiply(0.1, tf.eye(tf.shape(diag_mat)[1])))  
+            temp_rand = tf.matmul(mod_diag_mat, v, adjoint_b=True)
+            rand_t = tf.matmul(u,temp_rand)
+
+            # Choice 1
+            B = rand_t
+
+            # Choice 2
             # B = layer_grad
-            print("layer _ grad", B)
-            #print("layer grad shape", layer_grad)
-            print("loss grad shape", loss_grad)
+
+            # Choice 3
             # B = tf.random_uniform( tf.shape(layer_grad), -0.0001,0.0001)
-            rand_t  = tf.matmul(B, loss_grad)[0];  
-            print(rand_t.shape)
+
+            rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];  
+
             #tf.reshape(layer_grad,shape )
             return rand_t
                 
@@ -132,6 +133,17 @@ class learners():
         var_list =[ item for item in self.keys]
         c =  tf.train.AdamOptimizer(lr).apply_gradients( [ (e,var_list[i]) for i,e in enumerate(b) ] )
         return a, b, c
+
+    def correlation_matrix(self, layer_out):
+        mean, var = tf.nn.moments(
+            layer_out,
+            axes = [1]
+        )
+        print("layer mean, var", mean.get_shape(), var.get_shape() )
+        #mean = tf.reduce_mean(layer_out, axis = 0)
+        temp = tf.subtract(layer_out, mean)
+        cov = tf.matmul(temp, temp, transpose_b=True)
+        return cov
 
     def reshape_respect_batch(self,tensor, out_shape_no_batch_list):
         """
@@ -153,11 +165,6 @@ class learners():
         with tf.variable_scope("direct_feedback_alignment"):
             # Matrix gradient list
             rand_list =[]
-            # Get flatten size of outputs
-            out_shape = output.get_shape()
-            out_num_nodes, shape_start_index = self.get_num_nodes_respect_batch(out_shape)
-            out_non_batch_shape = out_shape.as_list()[shape_start_index:]
-            # Get the loss gradients with respect to the outputs.
             loss_grad = tf.gradients(loss, output)
             virtual_gradient_param_pairs = []
             # Construct direct feedback for each layer
@@ -166,13 +173,8 @@ class learners():
                     if layer_out is output:
                         proj_out = output
                     else:
-                        # print("i == ", i )
-                        # Flatten the layer (this is naiive with respect to convolutions.)
-                        flat_layer, layer_shape = self.flatten_respect_batch(layer_out)
-                        layer_num_nodes = layer_shape[-1]
                         layer_grad = tf.gradients(loss, layer_out)
-                        # rand_projection = self.random_matrix([layer_num_nodes, out_num_nodes])
-                        rand_t = self.grad_placeholder(layer_grad, loss_grad, [layer_num_nodes, out_num_nodes])
+                        rand_t     = self.grad_placeholder(layer_grad, loss_grad)
                         rand_list.append(rand_t);
             return rand_list
 
@@ -208,26 +210,19 @@ class learners():
                         flat_layer, layer_shape = self.flatten_respect_batch(layer_out)
                         layer_num_nodes = layer_shape[-1]
                         layer_grad = tf.gradients(output, layer_out)
-                        # print("layer grad", layer_grad)
-                        # print("loss grad", loss_grad)
-                        # rand_projection = self.random_matrix([layer_num_nodes, out_num_nodes])
-                        rand_t = self.grad_placeholder(layer_grad, loss_grad, [layer_num_nodes, out_num_nodes])
+                        rand_t = self.grad_placeholder(layer_grad, loss_grad)
                         Mat_list.append(tf.placeholder("float32", shape=rand_t.get_shape()))
-                        #print("rand projection shape", rand_projection.get_shape())
-                        # print("shape_proj_3 flat layers", flat_layer.get_shape())
-                        
                         flat_proj_out = tf.matmul(flat_layer, Mat_list[len(Mat_list)-1])
-                        # print(flat_proj_out.get_shape())
                         # Reshape back to output dimensions and then get the gradients.
                         proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)
+                        # fac = self.correlation_matrix(layer_out)
+                        # print("lay out", fac)
                         factor = 0.001
                     # print("Going to setup gradients")
                     for weight in layer_weights:
                         # print("loss", loss_grad, "\n projection",  proj_out)
-                        # virtual_gradient_param_pairs +=  [
-                        #    ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0]+ factor*weight), weight)]
                         virtual_gradient_param_pairs +=  [
-                            ( tf.gradients(proj_out, weight, grad_ys=loss_grad)[0], weight)]  
+                           ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0] + factor*weight ), weight)]
             # I defines my variables here
             train_op = optimizer.apply_gradients(virtual_gradient_param_pairs)
             # print("start the optimizer")
