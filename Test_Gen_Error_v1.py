@@ -40,10 +40,12 @@ def return_dict(placeholder, List, model, batch_x, batch_y):
     S[model.classifier['Target'] ] = batch_y
     return S
 
-def return_dict_EDL(model, batch_x, batch_y):
+def return_dict_EDL(model, batch_x, batch_y, List):
     S ={}
     S[model.Deep['FL_layer0']] = batch_x
     S[model.classifier['Target'] ] = batch_y
+    for i, element in enumerate(List):
+        S[model.Trainer["random_matrices"][i]] = element
     return S
 
 def sample_Z(X, m, n, kappa):
@@ -122,11 +124,13 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
             for batch in iterate_minibatches(X_train, y_train, Train_batch_size, shuffle=True):
                 batch_xs, batch_ys  = batch   
                 batch_noise_xs  = sample_Z(batch_xs, Train_batch_size, X_train.shape[1], 1)
-
+                grads_1 = model.sess.run([ model.Trainer["matrix_output"] ],
+                feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys})
+                List_2 = [g for g in grads_1[0]]
                 # Gather Gradients
-                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_xs, batch_ys) ) 
-                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_noise_xs, batch_ys) ) 
-                #model.Summaries['train_writer'].add_summary(summary, i)
+                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_xs, batch_ys, List_2) )                 
+                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_noise_xs, batch_ys, List_2) ) 
+                  #model.Summaries['train_writer'].add_summary(summary, i)
             if i % 1 == 0:
                 summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict={ model.Deep['FL_layer0']: X_test, model.classifier['Target'] : y_test})
@@ -179,7 +183,7 @@ iterat_kappa = 1
 Kappa_s = np.random.uniform(0, 1, size=[iterat_kappa])
 print "kappa is", Kappa_s
 for i in tqdm(xrange(iterat_kappa)):
-    Temp.append(Analyse_custom_Optimizer_GDR(X_train,y_train,X_test,y_test, Kappa_s[i]))
+    Temp.append(Analyse_custom_Optimizer_EDL(X_train,y_train,X_test,y_test, Kappa_s[i]))
 print(np.array(Temp).mean(), np.array(Temp).std())
 Results = np.zeros([iterat_kappa,2])
 Results[:,1] = Temp

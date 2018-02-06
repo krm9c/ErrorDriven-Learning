@@ -44,8 +44,6 @@ def variable_summaries(var, key):
         tf.summary.scalar('min'+key, tf.reduce_min(var))
         tf.summary.histogram('histogram'+key, var)
 
-
-
 # The main Class
 class learners():
     def __init__(self):
@@ -94,7 +92,7 @@ class learners():
             shape = tensor.get_shape()
             num_nodes, shape_start_index = self.get_num_nodes_respect_batch(shape)
 
-            # Check if the tensor is already flat!
+            # Check if the tensor is already flat!2
             if len(shape) - shape_start_index == 1:
                 return tensor, shape.as_list()
 
@@ -105,6 +103,35 @@ class learners():
                 flat = tf.reshape(tensor, [num_nodes])
 
             return flat
+    
+    def grad_placeholder(self, layer_grad, loss_grad,  shape):
+        with tf.variable_scope("radom_matrix_1"):
+            s, u, v = tf.svd(layer_grad, full_matrices=True)
+            # print("SVD done")
+            print("Before", s.get_shape(), v.get_shape(), u.get_shape())
+            print("After", s.get_shape(), v.get_shape(), u.get_shape())
+            rand_t  = tf.matmul(u, tf.matmul(tf.linalg.diag(s),\
+            v, adjoint_b=True))
+            print("rand shape", rand_t[0])
+            B = rand_t[0]
+            temp_B = B
+            print("Temp", B.get_shape())
+            # B = layer_grad
+            print("layer _ grad", B)
+            #print("layer grad shape", layer_grad)
+            print("loss grad shape", loss_grad)
+            # B = tf.random_uniform( tf.shape(layer_grad), -0.0001,0.0001)
+            rand_t  = tf.matmul(B, loss_grad)[0];  
+            print(rand_t.shape)
+            #tf.reshape(layer_grad,shape )
+            return rand_t
+                
+    def Custom_Optimizer(self, lr):
+        a = tf.gradients(self.classifier['cost_NN'], self.keys)
+        b = [  (tf.placeholder("float32", shape=grad.get_shape())) for grad in a]
+        var_list =[ item for item in self.keys]
+        c =  tf.train.AdamOptimizer(lr).apply_gradients( [ (e,var_list[i]) for i,e in enumerate(b) ] )
+        return a, b, c
 
     def reshape_respect_batch(self,tensor, out_shape_no_batch_list):
         """
@@ -120,20 +147,12 @@ class learners():
                 shaped = tf.reshape(tensor, [-1] + out_shape_no_batch_list)
             else:
                 shaped = tf.reshape(tensor, out_shape_no_batch_list)
-
             return shaped
 
-    def direct_feedback_alignement(self, optimizer, loss, output, activation_param_pairs):
-        """
-        Builds a series of gradient ops which constitute direct_feedback_alignment.
-        Params:
-            - OPTIMIZER: A tf.train.Optimizer to apply to the direct feedback. Eg. tf.train.AdamOptimizer(1e-4)
-            - LOSS: A loss function of the OUTPUTs to optimize.
-            - OUTPUT: An output tensor for whatever tensorflow graph we would like to optimize.
-            - ACTIVATION_PARAM_PAIRS: A list of pairs of output activations for every "layer" and the associated weight variables.
-        Returns: a training operation similar to OPTIMIZER.minimize(LOSS).
-        """
+    def df_getmatrices(self, optimizer, loss, output, activation_param_pairs):
         with tf.variable_scope("direct_feedback_alignment"):
+            # Matrix gradient list
+            rand_list =[]
             # Get flatten size of outputs
             out_shape = output.get_shape()
             out_num_nodes, shape_start_index = self.get_num_nodes_respect_batch(out_shape)
@@ -147,36 +166,73 @@ class learners():
                     if layer_out is output:
                         proj_out = output
                     else:
+                        # print("i == ", i )
                         # Flatten the layer (this is naiive with respect to convolutions.)
                         flat_layer, layer_shape = self.flatten_respect_batch(layer_out)
                         layer_num_nodes = layer_shape[-1]
                         layer_grad = tf.gradients(loss, layer_out)
-                        print("gradient shape", tf.shape(layer_grad))
-                        print("flat_layer", flat_layer, layer_shape)
+                        # rand_projection = self.random_matrix([layer_num_nodes, out_num_nodes])
+                        rand_t = self.grad_placeholder(layer_grad, loss_grad, [layer_num_nodes, out_num_nodes])
+                        rand_list.append(rand_t);
+            return rand_list
 
-                        # First make random matrices to virutally connect each layer with the output.
-                        rand_projection = self.random_matrix([layer_num_nodes, out_num_nodes])
-                        flat_proj_out = tf.matmul(flat_layer, rand_projection)
 
+    def direct_feedback_alignement(self, optimizer, loss, output, activation_param_pairs):
+        """
+        Builds a series of gradient ops which constitute direct_feedback_alignment.
+        Params:
+            - OPTIMIZER: A tf.train.Optimizer to apply to the direct feedback. Eg. tf.train.AdamOptimizer(1e-4)
+            - LOSS: A loss function of the OUTPUTs to optimize.
+            - OUTPUT: An output tensor for whatever tensorflow graph we would like to optimize.
+            - ACTIVATION_PARAM_PAIRS: A list of pairs of output activations for every "layer" and the associated weight variables.
+        Returns: a training operation similar to OPTIMIZER.minimize(LOSS).
+        """
+        with tf.variable_scope("direct_feedback_alignment"):
+            # Matrix gradient list
+            Mat_list =[]
+            # Get flatten size of outputs
+            out_shape = output.get_shape()
+            out_num_nodes, shape_start_index = self.get_num_nodes_respect_batch(out_shape)
+            out_non_batch_shape = out_shape.as_list()[shape_start_index:]
+            # Get the loss gradients with respect to the outputs.
+            loss_grad = tf.gradients(loss, output)
+            virtual_gradient_param_pairs = []
+            # Construct direct feedback for each layer
+            for i, (layer_out, layer_weights) in enumerate(activation_param_pairs):
+                with tf.variable_scope("virtual_feedback_{}".format(i)):
+                    if layer_out is output:
+                        proj_out = output
+                    else:
+                        # print("i == ", i )
+                        # Flatten the layer (this is naiive with respect to convolutions.)
+                        flat_layer, layer_shape = self.flatten_respect_batch(layer_out)
+                        layer_num_nodes = layer_shape[-1]
+                        layer_grad = tf.gradients(output, layer_out)
+                        # print("layer grad", layer_grad)
+                        # print("loss grad", loss_grad)
+                        # rand_projection = self.random_matrix([layer_num_nodes, out_num_nodes])
+                        rand_t = self.grad_placeholder(layer_grad, loss_grad, [layer_num_nodes, out_num_nodes])
+                        Mat_list.append(tf.placeholder("float32", shape=rand_t.get_shape()))
+                        #print("rand projection shape", rand_projection.get_shape())
+                        # print("shape_proj_3 flat layers", flat_layer.get_shape())
+                        
+                        flat_proj_out = tf.matmul(flat_layer, Mat_list[len(Mat_list)-1])
+                        # print(flat_proj_out.get_shape())
                         # Reshape back to output dimensions and then get the gradients.
                         proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)
                         factor = 0.001
+                    # print("Going to setup gradients")
                     for weight in layer_weights:
-                        print(loss_grad, proj_out)
+                        # print("loss", loss_grad, "\n projection",  proj_out)
+                        # virtual_gradient_param_pairs +=  [
+                        #    ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0]+ factor*weight), weight)]
                         virtual_gradient_param_pairs +=  [
-                            ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0]+ factor*weight), weight)]
-
+                            ( tf.gradients(proj_out, weight, grad_ys=loss_grad)[0], weight)]  
+            # I defines my variables here
             train_op = optimizer.apply_gradients(virtual_gradient_param_pairs)
-            return train_op 
+            # print("start the optimizer")
+            return train_op,  Mat_list
 
-    
-    def Custom_Optimizer(self, lr):
-        a_grad_net = tf.gradients(self.classifier['cost_NN'], self.keys)
-        a = a_grad_net
-        b = [  (tf.placeholder("float32", shape=grad.get_shape())) for grad in a]
-        var_list =[ item for item in self.keys]
-        c =  tf.train.AdamOptimizer(lr).apply_gradients( [ (e,var_list[i]) for i,e in enumerate(b) ] )
-        return a, b, c
 
     def init_NN_custom(self, classes, lr, Layers, act_function, par='GDR'):
         if par =='EDL':
@@ -224,11 +280,12 @@ class learners():
                 # Self writing optimizers
                 self.Trainer["grads"], self.Trainer["grad_placeholder"], self.Trainer["apply_placeholder_op"] =\
                 self.Custom_Optimizer(learning_rate)
-
-                tf.summary.scalar('LearningRate', lr)
-                tf.summary.scalar('Cost_NN', self.classifier["cost_NN"])
-                for grad in self.Trainer["grads"]:
-                    variable_summaries(grad, 'gradients')
+                
+                print("Sumamries")
+                # tf.summary.scalar('LearningRate', lr)
+                # tf.summary.scalar('Cost_NN', self.classifier["cost_NN"])
+                # for grad in self.Trainer["grads"]:
+                #     variable_summaries(grad, 'gradients')
         
         else:
             with tf.name_scope("Trainer"):
@@ -242,10 +299,14 @@ class learners():
                 # The final cost function 
                 self.classifier["cost_NN"] = tf.reduce_mean(Error_Loss)
 
-                self.Trainer["EDL"] = self.direct_feedback_alignement(
+                self.Trainer["matrix_output"] = self.df_getmatrices( tf.train.AdamOptimizer(1e-4),
+                    Error_Loss, self.classifier['class'], array )
+
+                self.Trainer["EDL"] , self.Trainer["random_matrices"]= self.direct_feedback_alignement(
                     tf.train.AdamOptimizer(1e-4),
                     Error_Loss, self.classifier['class'], array)
-
+        
+        print("Evaluation")
         with tf.name_scope('Evaluation'):
             with tf.name_scope('CorrectPrediction'):
                 self.Evaluation['correct_prediction'] = tf.equal(tf.argmax(tf.nn.softmax(self.classifier['class']) ,1),\
@@ -262,5 +323,7 @@ class learners():
         self.Summaries['merged'] = tf.summary.merge_all()
         self.Summaries['train_writer'] = tf.summary.FileWriter('train/', self.sess.graph)
         self.Summaries['test_writer'] = tf.summary.FileWriter('test/')
+        print("initializing variables")
         self.sess.run(tf.global_variables_initializer())
+        print("return stuff")
         return self
