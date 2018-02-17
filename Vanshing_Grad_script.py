@@ -8,6 +8,8 @@ import numpy as np
 import traceback
 from tensorflow.examples.tutorials.mnist import input_data
 
+
+
 ###################################################################################
 def import_pickled_data(string):
     f = gzip.open('../data/'+string+'.pkl.gz','rb')
@@ -55,10 +57,13 @@ def sample_Z(X, m, n, kappa):
 #####################################################################################
 def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
     import gc
+    global  Layer_Norm
     # Lets start with creating a model and then train batch wise.
     model = NN_class.learners()
-    model = model.init_NN_custom(classes, 0.001, [inputs,100, 100, 100, 100, 100], tf.nn.relu)
-    acc_array = np.zeros( ( (Train_Glob_Iterations) , 1))
+    list = [inputs]
+    list.extend([100 for i in xrange(10)])
+    model = model.init_NN_custom(classes, 0.001, list, tf.nn.relu,'GDR')
+    acc_array  = np.zeros( ( (Train_Glob_Iterations) , 1))
     try:
         count = 0        
         t = xrange(Train_Glob_Iterations)
@@ -74,9 +79,16 @@ def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
                 feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys })
                 grads_2 = model.sess.run([ model.Trainer["grads"] ],
                 feed_dict ={ model.Deep['FL_layer0'] : batch_noise_xs, model.classifier['Target']: batch_ys }) 
+
                 List_1 = [g for g in grads_1[0]]
-                List_2 = [0.5*g for g in grads_2[0]]
-                List = [np.add(a,b) for a,b in zip(List_1, List_2)]
+                List_2 = [0.05*g for g in grads_2[0]]
+                List   = [np.add(a,b) for a,b in zip(List_1, List_2)]
+
+                # temp = 0;
+                # for j in range(0, 60, 2):
+                #     Layer_Norm[i,temp] = np.linalg.norm(List[j])
+                #     temp = temp + 1;
+
                 # Apply gradients
                 summary, _ = model.sess.run( [ model.Summaries['merged'], model.Trainer["apply_placeholder_op"] ], \
                 feed_dict= return_dict( model.Trainer["grad_placeholder"], List, model, batch_xs, batch_ys) )     
@@ -112,8 +124,11 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
     import gc
     # Lets start with creating a model and then train batch wise.
     model = NN_class.learners()
-    model = model.init_NN_custom(classes, 0.001, [inputs,100,100], tf.nn.relu,'EDL')
+    list = [inputs]
+    list.extend([30 for i in xrange(50)])
+    model = model.init_NN_custom(classes, 0.00001, list, tf.nn.tanh,'EDL')
     acc_array = np.zeros( ( (Train_Glob_Iterations) , 1))
+    
     try:
         count = 0        
         t = xrange(Train_Glob_Iterations)
@@ -129,8 +144,15 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
                 List_2 = [g for g in grads_1[0]]
                 # Gather Gradients
                 _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_xs, batch_ys, List_2) )                 
-                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_noise_xs, batch_ys, List_2) ) 
-                  #model.Summaries['train_writer'].add_summary(summary, i)
+                # _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_noise_xs, batch_ys, List_2) ) 
+
+                temp = 0;
+                for j in range(0, 50):
+                    Layer_Norm[i,j] = np.linalg.norm(List_2[j])
+                    temp = temp+1;
+
+                # model.Summaries['train_writer'].add_summary(summary, i)
+
             if i % 1 == 0:
                 summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict={ model.Deep['FL_layer0']: X_test, model.classifier['Target'] : y_test})
@@ -161,37 +183,34 @@ def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
 
 ## Setup the parameters and call the functions
 Temp =[]
-Train_batch_size = 128
+Train_batch_size = 64
 Train_Glob_Iterations = 100
+# A global variable
+Layer_Norm = np.zeros( ( (Train_Glob_Iterations) , 50))
+classes = 10
+print("I am working on EDL")
 import tflearn
 from tqdm import tqdm
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
 X_train = mnist.train.images
 X_test = mnist.test.images
 y_train = mnist.train.labels
 y_test = mnist.test.labels
-# dataset = 'rolling'
-X_train, y_train, X_test, y_test = import_pickled_data(dataset)
-classes = 10
-
-# y_train = tflearn.data_utils.to_categorical((y_train), classes)
-# y_test  = tflearn.data_utils.to_categorical((y_test), classes)
-# from sklearn import preprocessing
-# X_train = preprocessing.scale(X_train)
-# X_test  = preprocessing.scale(X_test)
 print "Train, Test", X_train.shape, X_test.shape, y_train.shape, y_train.shape
+
 inputs   = X_train.shape[1]
 classes  = y_train.shape[1]
-filename = 'mnist_uni.csv'
+filename = 'vanishing_EDL_tanh_50.csv'
 print("classes", classes)
 print("filename", filename)
 x = input()
-iterat_kappa = 100
+iterat_kappa = 1
 Kappa_s = np.random.uniform(0, 1, size=[iterat_kappa])
 print "kappa is", Kappa_s
 for i in tqdm(xrange(iterat_kappa)):
-    Temp.append(Analyse_custom_Optimizer_GDR(X_train,y_train,X_test,y_test, Kappa_s[i]))
+    Temp.append(Analyse_custom_Optimizer_EDL(X_train,y_train,X_test,y_test, Kappa_s[i]))
 print(np.array(Temp).mean(), np.array(Temp).std())
 Results = np.zeros([iterat_kappa,2])
 Results[:,1] = Temp

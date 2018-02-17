@@ -18,8 +18,8 @@ from functools import reduce
 # Helper Function for the weight and the bias variable initializations
 # Weight
 def xavier(fan_in, fan_out):
-    low = -4*np.sqrt(4.0/(fan_in + fan_out)) # use 4 for sigmoid, 1 for tanh activation
-    high = 4*np.sqrt(4.0/(fan_in + fan_out))
+    low = -1*np.sqrt(1.0/(fan_in + fan_out)) # use 4 for sigmoid, 1 for tanh activation
+    high = 1*np.sqrt(1.0/(fan_in + fan_out))
     return tf.random_uniform([fan_in, fan_out], minval=low, maxval=high, dtype=tf.float32)
 
 def weight_variable(shape, trainable, name):
@@ -108,17 +108,17 @@ class learners():
         with tf.variable_scope("radom_matrix_1"):
             s, u, v = tf.svd(layer_grad)
             diag_mat_cov = tf.abs(tf.linalg.diag(s));
-            diag_mat = tf.sqrt( tf.abs(tf.linalg.diag(s)) );
-            mod_diag_mat = \
-                tf.add(diag_mat, tf.multiply(0.1, tf.eye(tf.shape(diag_mat)[1])))  
-            temp_rand = tf.matmul(mod_diag_mat, v, adjoint_b=True)
-            rand_t = tf.matmul(u,temp_rand)
+            # diag_mat = tf.sqrt( tf.abs(tf.linalg.diag(s)) );
+            # mod_diag_mat = \
+            #     tf.add(diag_mat, tf.multiply(0.1, tf.eye(tf.shape(diag_mat)[1])))  
+            # temp_rand = tf.matmul(mod_diag_mat, v, adjoint_b=True)
+            # rand_t = tf.matmul(u,temp_rand)
             ######### Choice 1
-            B = rand_t
+            # B = rand_t
             ######### Choice 2
             # B = layer_grad
             ########## Choice 3
-            # B = tf.random_uniform( tf.shape(layer_grad), -0.0001,0.0001)
+            B = tf.random_uniform( tf.shape(layer_grad), -0.0001,0.0001)
             rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];  
             return rand_t, diag_mat_cov
                 
@@ -203,19 +203,21 @@ class learners():
 
                         # Reshape back to output dimensions and then get the gradients.
                         proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)  
-                        fac = \
-                        tf.add(diag_mat, tf.multiply(0.01, tf.eye(tf.shape(diag_mat)[1])))[0]  
-                        print("lay out", fac)
+                        # fac = \
+                        # tf.add(diag_mat, tf.multiply(0.01, tf.eye(tf.shape(diag_mat)[1])))[0]  
+                        # print("lay out", fac)
+                        
                     # print("Going to setup gradients")
                     j = 0;
                     for weight in layer_weights:    
-                        if flag == 0:
-                            if j is 1:
-                                reg =  tf.squeeze(tf.matmul(fac, tf.expand_dims(weight,1)), axis = 1)
-                            else:
-                                reg  = tf.transpose(tf.matmul(fac,weight, transpose_b= True))
-                        else:
-                            reg = fac*weight
+                        # if flag == 0:
+                        #     if j is 1:
+                        #         reg =  tf.squeeze(tf.matmul(fac, tf.expand_dims(weight,1)), axis = 1)
+                        #     else:
+                        #         reg  = tf.transpose(tf.matmul(fac,weight, transpose_b= True))
+                        # else:
+                        #     reg = fac*weight
+                        reg = 0.001*weight
                         j= j+1;
                         virtual_gradient_param_pairs +=  [
                            ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0]+ reg), weight)]
