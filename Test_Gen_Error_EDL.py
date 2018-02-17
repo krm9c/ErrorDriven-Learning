@@ -1,6 +1,6 @@
 # The test file 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = ' '
 import Class_gen_Error as  NN_class
 import tensorflow as tf
 import gzip, cPickle
@@ -49,15 +49,16 @@ def return_dict_EDL(model, batch_x, batch_y, List):
     return S
 
 def sample_Z(X, m, n, kappa):
+    kappa = 0.67
     return (X + np.random.uniform(-kappa, kappa, size=[m, n]))
     #return (X + np.random.normal(0, kappa, size=[m, n]))
 
 #####################################################################################
-def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
+def Analyse_custom_Optimizer_EDL(X_train, y_train, X_test, y_test, kappa):
     import gc
     # Lets start with creating a model and then train batch wise.
     model = NN_class.learners()
-    model = model.init_NN_custom(classes, 0.001, [inputs,100, 100, 100, 100, 100], tf.nn.relu)
+    model = model.init_NN_custom(classes, 0.001, [inputs,100,100,100], tf.nn.relu,'EDL')
     acc_array = np.zeros( ( (Train_Glob_Iterations) , 1))
     try:
         count = 0        
@@ -69,36 +70,24 @@ def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
             for batch in iterate_minibatches(X_train, y_train, Train_batch_size, shuffle=True):
                 batch_xs, batch_ys  = batch   
                 batch_noise_xs  = sample_Z(batch_xs, Train_batch_size, X_train.shape[1], 1)
+                grads_1 = model.sess.run([ model.Trainer["matrix_output"] ],
+                feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys})
+                List_2 = [g for g in grads_1[0]]
 
                 # Gather Gradients
-                grads_1 = model.sess.run([ model.Trainer["grads"] ],
-                feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys })
-
-                grads_2 = model.sess.run([ model.Trainer["grads"] ],
-                feed_dict ={ model.Deep['FL_layer0'] : batch_noise_xs, model.classifier['Target']: batch_ys }) 
-                
-                List_1 = [ g for g in grads_1[0]]
-                List_2 = [ g for g in grads_2[0]]
-                List = [np.add(a,b) for a,b in zip(List_1, List_2)]
-
-                # Apply gradients
-                summary, _ = model.sess.run( [ model.Summaries['merged'], model.Trainer["apply_placeholder_op"] ], \
-                feed_dict= return_dict( model.Trainer["grad_placeholder"], List, model, batch_xs, batch_ys) )     
-                #model.Summaries['train_writer'].add_summary(summary, i)
+                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_xs, batch_ys, List_2) )                 
+                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_noise_xs, batch_ys, List_2) ) 
 
             if i % 1 == 0:
                 summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict={ model.Deep['FL_layer0']: Noise_data, model.classifier['Target'] : y_test})
-                
                 print("The accuracy is", acc_array[i])
-                
+
                 # model.Summaries['test_writer'].add_summary(summary, i)
-                
                 if max(acc_array) > 0.99:
                     summary, pr  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['prob'] ], \
-                    feed_dict ={ model.Deep['FL_layer0'] : Noise_data,model.classifier['Target'] : y_test } )
+                    feed_dict ={ model.Deep['FL_layer0'] : X_test,model.classifier['Target'] : y_test } )
                     break
-                
                 # model.Summaries['test_writer'].add_summary(summary, i)
                 
     except Exception as e:
@@ -116,12 +105,12 @@ def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
     print "Accuracy", acc_array[i]
     return acc_array[i]
 
-####################################################################################
-def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
+#####################################################################################
+def Analyse_custom_Optimizer_EDL_old(X_train, y_train, X_test, y_test, kappa):
     import gc
     # Lets start with creating a model and then train batch wise.
     model = NN_class.learners()
-    model = model.init_NN_custom(classes, 0.001, [inputs,100, 100, 100, 100, 100], tf.nn.relu)
+    model = model.init_NN_custom(classes, 0.01, [inputs,100,100, 100], tf.nn.relu,'EDL')
     acc_array = np.zeros( ( (Train_Glob_Iterations) , 1))
     try:
         count = 0        
@@ -134,29 +123,23 @@ def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
                 batch_xs, batch_ys  = batch   
                 batch_noise_xs  = sample_Z(batch_xs, Train_batch_size, X_train.shape[1], 1)
 
-                # Gather Gradients
-                grads_1 = model.sess.run([ model.Trainer["grads"] ],
-                feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys })
-                
-                List = [ g for g in grads_1[0]]
+                grads_1 = model.sess.run([ model.Trainer["matrix_output"] ],
+                feed_dict ={ model.Deep['FL_layer0'] : batch_xs, model.classifier['Target']: batch_ys})
+                List_2 = [g for g in grads_1[0]]
 
-                summary, _ = model.sess.run( [ model.Summaries['merged'], model.Trainer["apply_placeholder_op"] ], \
-                feed_dict= return_dict( model.Trainer["grad_placeholder"], List, model, batch_xs, batch_ys) )     
-                
+                # Gather Gradients
+                _ = model.sess.run( [model.Trainer["EDL"]] , feed_dict= return_dict_EDL(model, batch_xs, batch_ys, List_2) )                 
 
             if i % 1 == 0:
                 summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict={ model.Deep['FL_layer0']: Noise_data, model.classifier['Target'] : y_test})
-                
                 print("The accuracy is", acc_array[i])
-                
+
                 # model.Summaries['test_writer'].add_summary(summary, i)
-                
                 if max(acc_array) > 0.99:
                     summary, pr  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['prob'] ], \
-                    feed_dict ={ model.Deep['FL_layer0'] : Noise_data,model.classifier['Target'] : y_test } )
+                    feed_dict ={ model.Deep['FL_layer0'] : X_test,model.classifier['Target'] : y_test } )
                     break
-                
                 # model.Summaries['test_writer'].add_summary(summary, i)
                 
     except Exception as e:
@@ -176,13 +159,12 @@ def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
 
 
 ## Setup the parameters and call the functions
-Train_batch_size = 64
+Train_batch_size = 128
 Train_Glob_Iterations = 40
 
 import tflearn
 from tqdm import tqdm
 from tensorflow.examples.tutorials.mnist import input_data
-
 mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 X_train = mnist.train.images
 X_test = mnist.test.images
@@ -201,23 +183,23 @@ classes = 10
 inputs   = X_train.shape[1]
 classes  = y_train.shape[1]
 
-filename = 'mnist_uni_grad.csv'
+filename = 'mnist_uni_EDL.csv'
 print("classes", classes)
 print("filename", filename)
-iterat_kappa = 100
+iterat_kappa = 1
 Kappa_s = np.random.uniform(0, 1, size=[iterat_kappa])
 Result_New = []
 Result_Old = []
 
 print("Details", filename, "mnist", iterat_kappa, Train_batch_size, Train_Glob_Iterations)
 for i in tqdm(xrange(iterat_kappa)):
-    Result_New.append(Analyse_custom_Optimizer_GDR(X_train,y_train,X_test,y_test, Kappa_s[i]))
-    Result_Old.append(Analyse_custom_Optimizer_GDR_old(X_train,y_train,X_test,y_test, Kappa_s[i]) )
+    Result_New.append(Analyse_custom_Optimizer_EDL(X_train,y_train,X_test,y_test, Kappa_s[i]))
+    # Result_Old.append(Analyse_custom_Optimizer_EDL_old(X_train,y_train,X_test,y_test, Kappa_s[i]) )
 
-Results = np.zeros([iterat_kappa,3])
-Results[:,1] = Result_Old
-Results[:,2] = Result_New
-# print "\n avg", Results[:,1].mean(), "std", Results[:,1].std()
-Results[:,0] = Kappa_s[:]
-np.savetxt(filename, Results, delimiter=',')
+# Results = np.zeros([iterat_kappa,3])
+# Results[:,1] = Result_Old
+# Results[:,2] = Result_New
+# # print "\n avg", Results[:,1].mean(), "std", Results[:,1].std()
+# Results[:,0] = Kappa_s[:]
+# np.savetxt(filename, Results, delimiter=',')
 

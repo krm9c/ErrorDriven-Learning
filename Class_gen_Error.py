@@ -110,7 +110,8 @@ class learners():
             diag_mat_cov = tf.abs(tf.linalg.diag(s));
             diag_mat = tf.sqrt( tf.abs(tf.linalg.diag(s)) );
             mod_diag_mat = \
-                tf.add(diag_mat, tf.multiply(0.1, tf.eye(tf.shape(diag_mat)[1])))  
+                tf.add(diag_mat, tf.multiply(0.01, tf.eye(tf.shape(diag_mat)[1])))  
+            
             temp_rand = tf.matmul(mod_diag_mat, v, adjoint_b=True)
             rand_t = tf.matmul(u,temp_rand)
             ######### Choice 1
@@ -118,8 +119,8 @@ class learners():
             ######### Choice 2
             # B = layer_grad
             ########## Choice 3
-            # B = tf.random_uniform( tf.shape(layer_grad), -0.0001,0.0001)
-            rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];  
+            # B = tf.random_uniform( tf.shape(layer_grad), -0.01,0.01)
+            rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];   
             return rand_t, diag_mat_cov
                 
     def Custom_Optimizer(self, lr):
@@ -148,9 +149,10 @@ class learners():
     def df_getmatrices(self, optimizer, loss, output, activation_param_pairs):
         with tf.variable_scope("direct_feedback_alignment"):
             # Matrix gradient list
-            rand_list =[]
+            rand_list = []
             loss_grad = tf.gradients(loss, output)
             virtual_gradient_param_pairs = []
+
             # Construct direct feedback for each layer
             for i, (layer_out, layer_weights) in enumerate(activation_param_pairs):
                 with tf.variable_scope("virtual_feedback_{}".format(i)):
@@ -158,7 +160,7 @@ class learners():
                         proj_out = output
                     else:
                         layer_grad = tf.gradients(loss, layer_out)
-                        rand_t, temp     = self.grad_placeholder(layer_grad, loss_grad)
+                        rand_t, temp = self.grad_placeholder(layer_grad, loss_grad)
                         rand_list.append(rand_t);
             return rand_list
 
@@ -188,7 +190,7 @@ class learners():
                 with tf.variable_scope("virtual_feedback_{}".format(i)):
                     if layer_out is output:
                         proj_out = output
-                        fac = 0.001
+                        fac = 0.00001
                         flag = 1
                     else:
                         # print("i == ", i )
@@ -204,21 +206,23 @@ class learners():
                         # Reshape back to output dimensions and then get the gradients.
                         proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)  
                         fac = \
-                        tf.add(diag_mat, tf.multiply(0.01, tf.eye(tf.shape(diag_mat)[1])))[0]  
-                        print("lay out", fac)
+                        tf.add( tf.subtract( tf.eye(tf.shape(diag_mat)[1]), diag_mat)[0], 0.01*tf.eye(tf.shape(diag_mat)[1]) )  
+                        # fac = diag_mat
+                        # print("lay out", fac)
                     # print("Going to setup gradients")
+
                     j = 0;
                     for weight in layer_weights:    
                         if flag == 0:
                             if j is 1:
-                                reg =  tf.squeeze(tf.matmul(fac, tf.expand_dims(weight,1)), axis = 1)
+                                reg  = tf.squeeze(tf.matmul(fac, tf.expand_dims(weight,1)), axis = 1)
                             else:
                                 reg  = tf.transpose(tf.matmul(fac,weight, transpose_b= True))
                         else:
                             reg = fac*weight
                         j= j+1;
                         virtual_gradient_param_pairs +=  [
-                           ( (tf.gradients(proj_out, weight, grad_ys=loss_grad)[0]+ reg), weight)]
+                           ( ((tf.gradients(proj_out, weight, grad_ys=loss_grad)[0])+0*reg), weight)]
             # I defines my variables here
             train_op = optimizer.apply_gradients(virtual_gradient_param_pairs)
             # print("start the optimizer")
@@ -267,7 +271,6 @@ class learners():
                     Reg = Reg+tf.nn.l2_loss(element) 
                 # The final cost function 
                 self.classifier["cost_NN"] = tf.reduce_mean(Error_Loss + 0.001*Reg)
-
                 # Self writing optimizers
                 self.Trainer["grads"], self.Trainer["grad_placeholder"], self.Trainer["apply_placeholder_op"] =\
                 self.Custom_Optimizer(learning_rate)
@@ -277,7 +280,6 @@ class learners():
                 # tf.summary.scalar('Cost_NN', self.classifier["cost_NN"])
                 # for grad in self.Trainer["grads"]:
                 #     variable_summaries(grad, 'gradients')
-        
         else:
             with tf.name_scope("Trainer"):
                 global_step = tf.Variable(0, trainable=False)
@@ -290,11 +292,11 @@ class learners():
                 # The final cost function 
                 self.classifier["cost_NN"] = tf.reduce_mean(Error_Loss)
 
-                self.Trainer["matrix_output"] = self.df_getmatrices( tf.train.AdamOptimizer(1e-4),
+                self.Trainer["matrix_output"] = self.df_getmatrices( tf.train.AdamOptimizer(learning_rate),
                     Error_Loss, self.classifier['class'], array )
 
                 self.Trainer["EDL"] , self.Trainer["random_matrices"]= self.direct_feedback_alignement(
-                    tf.train.AdamOptimizer(1e-4),
+                    tf.train.AdamOptimizer(learning_rate),
                     Error_Loss, self.classifier['class'], array)
         
         print("Evaluation")
