@@ -1,12 +1,12 @@
 # The test file
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = ' '
 import Class_gen_Error as  NN_class
 import tensorflow as tf
 import gzip, cPickle
 import numpy as np
 import traceback
-from tensorflow.examples.tutorials.mnist import input_data
+# # # from tensorflow.examples.tutorials.mnist import input_data
 
 ###################################################################################
 def import_pickled_data(string):
@@ -49,8 +49,8 @@ def return_dict_EDL(model, batch_x, batch_y, List):
     return S
 
 def sample_Z(X, m, n, kappa):
-    # return (X + np.random.uniform(-kappa, kappa, size=[m, n]))
-    return (X + np.random.normal(0, kappa, size=[m, n]))
+    return (X + 0*np.random.uniform(-kappa, kappa, size=[m, n]))
+    # return (X + np.random.normal(0, kappa, size=[m, n]))
 
 #####################################################################################
 def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
@@ -115,7 +115,7 @@ def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
         return 0
 
     tf.reset_default_graph()
-    del model
+
     gc.collect()
     print "Accuracy", acc_array[i],  acc_array_train[i], "gen_error", (acc_array[i]-acc_array_train[i])
     return acc_array[i], acc_array_train[i],(acc_array[i]-acc_array_train[i])
@@ -130,7 +130,7 @@ def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
     acc_array = np.zeros( ( Train_Glob_Iterations, 1))
     acc_array_train = np.zeros( ( Train_Glob_Iterations, 1))
     try:
-        count = 0
+
         t = xrange(Train_Glob_Iterations)
         from tqdm import tqdm
         Noise_data = sample_Z(X_test, X_test.shape[0], X_test.shape[1], kappa = kappa)
@@ -175,7 +175,7 @@ def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
         return 0
 
     tf.reset_default_graph()
-    del model
+
     gc.collect()
     print "Accuracy", acc_array[i],  acc_array_train[i], "gen_error", (acc_array[i]-acc_array_train[i])
     return acc_array[i], acc_array_train[i],(acc_array[i]-acc_array_train[i])
@@ -188,33 +188,35 @@ Train_Glob_Iterations = 40
 
 import tflearn
 from tqdm import tqdm
-from tensorflow.examples.tutorials.mnist import input_data
+#from tensorflow.examples.tutorials.mnist import input_data
 
-# mnist = input_data.read_data_sets("../data/MNIST_data/", one_hot=True)
-# X_train = mnist.train.images
-# X_test = mnist.test.images
-# y_train = mnist.train.labels
-# y_test = mnist.test.labels
+#mnist = input_data.read_data_sets("../../data/MNIST_data/", one_hot=True)
+#X_train = mnist.train.images
+#X_test = mnist.test.images
+#y_train = mnist.train.labels
+#y_test = mnist.test.labels
 
-classes = 11
-dataset = 'sensorless'
+classes = 2
+dataset = 'dexter'
 X_train, y_train, X_test, y_test = import_pickled_data(dataset)
 y_train = tflearn.data_utils.to_categorical((y_train), classes)
 y_test  = tflearn.data_utils.to_categorical((y_test), classes)
+print("Train", X_train.shape, "Test", X_test.shape)
+print("The data has been imported and ready")
 from sklearn import preprocessing
 X_train = preprocessing.scale(X_train)
 X_test  = preprocessing.scale(X_test)
+
 inputs = X_train.shape[1]
-x = input()
-filename = 'sensorless_normal_grad.csv'
-print("classes", classes)
-print("filename", filename)
-iterat_kappa = 1
+filename = 'dexter_grad.csv'
+iterat_kappa = 100
 Kappa_s = np.random.uniform(0, 1, size=[iterat_kappa])
 Results = np.zeros([iterat_kappa,7])
-print("Details", filename, "mnist", iterat_kappa, Train_batch_size, Train_Glob_Iterations)
-print("My changes have saved itself")
+print("Details", filename, dataset, iterat_kappa, Train_batch_size, Train_Glob_Iterations)
+x = input("My changes have saved itself")
 for i in tqdm(xrange(iterat_kappa)):
+    print("i", i, "kappa", Kappa_s[i])
+    Kappa_s[i] = 0;
     Results[i,0] = Kappa_s[i]
     Results[i,1], Results[i,2], Results[i,3] = Analyse_custom_Optimizer_GDR(X_train,y_train,X_test,y_test, Kappa_s[i])
     Results[i,4], Results[i,5], Results[i,6] = Analyse_custom_Optimizer_GDR_old(X_train,y_train,X_test,y_test, Kappa_s[i])
