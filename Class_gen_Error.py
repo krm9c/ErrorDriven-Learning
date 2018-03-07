@@ -77,7 +77,7 @@ class learners():
     def get_num_nodes_respect_batch(self,tensor_shape):
         shape_start_index = 1 if tensor_shape.as_list()[0] is None else 0
         return reduce(operator.mul, tensor_shape.as_list()[shape_start_index:], 1), shape_start_index
-    
+
     def random_matrix(self,shape):
         with tf.variable_scope("radom_matrix"):
             rand_t = tf.random_uniform(shape, -0.0001,0.0001)
@@ -103,32 +103,31 @@ class learners():
                 flat = tf.reshape(tensor, [num_nodes])
 
             return flat
-    
+
     def grad_placeholder(self, layer_grad, loss_grad):
         with tf.variable_scope("radom_matrix_1"):
-            s, u, v = tf.svd(layer_grad)
-            diag_mat_cov = tf.abs(tf.linalg.diag(s));
-            diag_mat = tf.sqrt( tf.abs(tf.linalg.diag(s)) );
+            layer_grad = layer_grad+tf.random_normal(tf.shape(layer_grad), mean= 0.0, stddev = 0.001)
+            s, u, v      = tf.svd(layer_grad)
+            diag_mat     = tf.sqrt( tf.abs(tf.linalg.diag(s)) );
             mod_diag_mat = \
-                tf.add(diag_mat, tf.multiply(0.01, tf.eye(tf.shape(diag_mat)[1])))  
-            
-            temp_rand = tf.matmul(mod_diag_mat, v, adjoint_b=True)
-            rand_t = tf.matmul(u,temp_rand)
+                tf.add(diag_mat, tf.multiply(0.00001, tf.eye(tf.shape(diag_mat)[1])))
+            temp_rand    = tf.matmul(mod_diag_mat, v, adjoint_b=True)
+            rand_t       = tf.matmul(u,temp_rand)
             ######### Choice 1
-            B = rand_t
+            # B = rand_t
             ######### Choice 2
-            # B = layer_grad
+            B = layer_grad
             ########## Choice 3
             # B = tf.random_uniform( tf.shape(layer_grad), -0.01,0.01)
-            rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];   
-            return rand_t, diag_mat_cov
-                
+            rand_t  = tf.matmul(B, loss_grad, transpose_a= True )[0];
+            return rand_t
+
     def Custom_Optimizer(self, lr):
         a = tf.gradients(self.classifier['cost_NN'], self.keys)
         b = [  (tf.placeholder("float32", shape=grad.get_shape())) for grad in a]
         var_list =[ item for item in self.keys]
         c =  tf.train.AdamOptimizer(lr).apply_gradients( [ (e,var_list[i]) for i,e in enumerate(b) ] )
-        return a, b, c
+        return a,b, c
 
     def reshape_respect_batch(self,tensor, out_shape_no_batch_list):
         """
@@ -160,11 +159,11 @@ class learners():
                         proj_out = output
                     else:
                         layer_grad = tf.gradients(loss, layer_out)
-                        rand_t, temp = self.grad_placeholder(layer_grad, loss_grad)
+                        rand_t = self.grad_placeholder(layer_grad, loss_grad)
                         rand_list.append(rand_t);
             return rand_list
 
-    def direct_feedback_alignement(self, optimizer, loss, output, activation_param_pairs):
+    def direct_feedback_alignement(self, optimizer, loss, output, activation_param_pairs, dec):
         """
         Builds a series of gradient ops which constitute direct_feedback_alignment.
         Params:
@@ -190,39 +189,39 @@ class learners():
                 with tf.variable_scope("virtual_feedback_{}".format(i)):
                     if layer_out is output:
                         proj_out = output
-                        fac = 0.00001
+
                         flag = 1
                     else:
-                        # print("i == ", i )
-                        # Flatten the layer (this is naiive with respect to convolutions.)
+
                         flat_layer, layer_shape = self.flatten_respect_batch(layer_out)
                         layer_num_nodes = layer_shape[-1]
                         layer_grad = tf.gradients(output, layer_out)
-                        rand_t, diag_mat = self.grad_placeholder(layer_grad, loss_grad)
-
+                        rand_t = self.grad_placeholder(layer_grad, loss_grad)
                         Mat_list.append(tf.placeholder("float32", shape=rand_t.get_shape()))
+                        layer_out = layer_out + tf.random_normal(tf.shape(layer_out), mean= 0.0, stddev = 0.001)
+                        s,_,_    = tf.svd(layer_out)
+                        diag_mat = tf.sqrt( tf.abs(tf.linalg.diag(s))+0.001);
+                        sum_diag = (tf.reduce_sum(diag_mat)+0.001)
+                        div_diag_mat = tf.truediv(diag_mat, sum_diag, name=None)
                         flat_proj_out = tf.matmul(flat_layer, Mat_list[len(Mat_list)-1])
 
                         # Reshape back to output dimensions and then get the gradients.
-                        proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)  
-                        fac = \
-                        tf.add( tf.subtract( tf.eye(tf.shape(diag_mat)[1]), diag_mat)[0], 0.01*tf.eye(tf.shape(diag_mat)[1]) )  
-                        # fac = diag_mat
-                        # print("lay out", fac)
-                    # print("Going to setup gradients")
-
+                        proj_out  = self.reshape_respect_batch(flat_proj_out, out_non_batch_shape)
+                        fac = tf.add( tf.subtract(tf.eye(tf.shape(diag_mat)[1]), div_diag_mat)[0], 0.001*tf.eye(tf.shape(diag_mat)[1]))
                     j = 0;
-                    for weight in layer_weights:    
+                    for weight in layer_weights:
                         if flag == 0:
                             if j is 1:
-                                reg  = tf.squeeze(tf.matmul(fac, tf.expand_dims(weight,1)), axis = 1)
+                                reg  = dec*tf.squeeze( tf.matmul( fac  ,tf.expand_dims(weight,1) ), axis = 1)
                             else:
-                                reg  = tf.transpose(tf.matmul(fac,weight, transpose_b= True))
+                                reg  = dec*tf.transpose(tf.matmul(fac  ,weight, transpose_b= True))
                         else:
-                            reg = fac*weight
+                            reg = dec*weight
                         j= j+1;
+
                         virtual_gradient_param_pairs +=  [
-                           ( ((tf.gradients(proj_out, weight, grad_ys=loss_grad)[0])+0*reg), weight)]
+                           ( tf.add( tf.gradients( proj_out , weight, grad_ys=loss_grad)[0], reg) , weight)]
+
             # I defines my variables here
             train_op = optimizer.apply_gradients(virtual_gradient_param_pairs)
             # print("start the optimizer")
@@ -244,7 +243,7 @@ class learners():
                     (self.Deep['FL_layer'+str(i)],\
                     ([self.classifier['Weight'+'FL_layer'+str(i)],self.classifier['Bias'+'FL_layer'+str(i)] ]) ) )
 
-                
+
         with tf.name_scope("Classifier"):
             self.classifier['class'] = self.nn_layer( self.Deep['FL_layer'+str(len(Layers)-1)],\
             Layers[len(Layers)-1], classes, act=tf.identity, trainability =  False, key = 'class')
@@ -262,34 +261,37 @@ class learners():
         if par  is not 'EDL':
             with tf.name_scope("Trainer"):
                 global_step = tf.Variable(0, trainable=False)
-                learning_rate = tf.train.exponential_decay(lr, global_step,
-                                            100000, 0.90, staircase=True)
+                learning_rate = lr
+
+                # tf.train.exponential_decay(lr, global_step,
+                # 100000, 0.90, staircase=True)
+
                 Error_Loss =  tf.nn.softmax_cross_entropy_with_logits(logits = \
                 self.classifier['class'], labels = self.classifier['Target'], name='Cost')
                 Reg = 0.001;
                 for element in self.keys:
-                    Reg = Reg+tf.nn.l2_loss(element) 
-                # The final cost function 
+                    Reg = Reg+tf.nn.l2_loss(element)
+                # The final cost function
                 self.classifier["cost_NN"] = tf.reduce_mean(Error_Loss + 0.001*Reg)
                 # Self writing optimizers
                 self.Trainer["grads"], self.Trainer["grad_placeholder"], self.Trainer["apply_placeholder_op"] =\
                 self.Custom_Optimizer(learning_rate)
-                
+
                 print("Sumamries")
-                # tf.summary.scalar('LearningRate', lr)
-                # tf.summary.scalar('Cost_NN', self.classifier["cost_NN"])
+                tf.summary.scalar('LearningRate', lr)
+                tf.summary.scalar('Cost_NN', self.classifier["cost_NN"])
                 # for grad in self.Trainer["grads"]:
                 #     variable_summaries(grad, 'gradients')
         else:
             with tf.name_scope("Trainer"):
                 global_step = tf.Variable(0, trainable=False)
-                learning_rate = tf.train.exponential_decay(lr, global_step,
-                                            100000, 0.90, staircase=True)
-
+                learning_rate =lr
+                dec = tf.train.exponential_decay(lr, global_step,
+                                            100000, 0.99, staircase=True)
                 Error_Loss =  tf.nn.softmax_cross_entropy_with_logits(logits = \
                 self.classifier['class'], labels = self.classifier['Target'], name='Cost')
 
-                # The final cost function 
+                # The final cost function
                 self.classifier["cost_NN"] = tf.reduce_mean(Error_Loss)
 
                 self.Trainer["matrix_output"] = self.df_getmatrices( tf.train.AdamOptimizer(learning_rate),
@@ -297,26 +299,26 @@ class learners():
 
                 self.Trainer["EDL"] , self.Trainer["random_matrices"]= self.direct_feedback_alignement(
                     tf.train.AdamOptimizer(learning_rate),
-                    Error_Loss, self.classifier['class'], array)
-        
+                    Error_Loss, self.classifier['class'], array, dec)
+
         print("Evaluation")
         with tf.name_scope('Evaluation'):
             with tf.name_scope('CorrectPrediction'):
                 self.Evaluation['correct_prediction'] = tf.equal(tf.argmax(tf.nn.softmax(self.classifier['class']) ,1),\
                 tf.argmax(self.classifier['Target'],1))
-                
+
             with tf.name_scope('Accuracy'):
                 self.Evaluation['accuracy'] = tf.reduce_mean(tf.cast(self.Evaluation['correct_prediction'], tf.float32))
-            
+
             with tf.name_scope('Prob'):
                 self.Evaluation['prob'] = tf.cast( tf.nn.softmax(self.classifier['class']), tf.float32 )
                 tf.summary.scalar('Accuracy', self.Evaluation['accuracy'])
-                tf.summary.histogram('Prob', self.Evaluation['prob']) 
-        
+                tf.summary.histogram('Prob', self.Evaluation['prob'])
+
         self.Summaries['merged'] = tf.summary.merge_all()
-        self.Summaries['train_writer'] = tf.summary.FileWriter('train/', self.sess.graph)
-        self.Summaries['test_writer'] = tf.summary.FileWriter('test/')
-        print("initializing variables")
+        # self.Summaries['train_writer'] = tf.summary.FileWriter('train/', self.sess.graph)
+        # self.Summaries['test_writer'] = tf.summary.FileWriter('test/')
+        # print("initializing variables")
         self.sess.run(tf.global_variables_initializer())
-        print("return stuff")
+        # print("return stuff")
         return self

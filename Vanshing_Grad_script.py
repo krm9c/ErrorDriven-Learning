@@ -8,8 +8,6 @@ import numpy as np
 import traceback
 from tensorflow.examples.tutorials.mnist import input_data
 
-
-
 ###################################################################################
 def import_pickled_data(string):
     f = gzip.open('../data/'+string+'.pkl.gz','rb')
@@ -205,7 +203,6 @@ classes  = y_train.shape[1]
 filename = 'vanishing_EDL_tanh_50.csv'
 print("classes", classes)
 print("filename", filename)
-x = input()
 iterat_kappa = 1
 Kappa_s = np.random.uniform(0, 1, size=[iterat_kappa])
 print "kappa is", Kappa_s
