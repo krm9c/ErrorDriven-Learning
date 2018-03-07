@@ -89,15 +89,15 @@ def Analyse_custom_Optimizer_GDR(X_train, y_train, X_test, y_test, kappa):
 
             if i % 1 == 0:
 
-		summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
+                summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict={ model.Deep['FL_layer0']: Noise_data, model.classifier['Target'] : y_test})
 
-	  	summary, acc_array_train[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
+                summary, acc_array_train[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict = {model.Deep['FL_layer0']: X_train, model.classifier['Target']: y_train})
 
-		print "iteration Accuracy", acc_array[i],  "Train", acc_array_train[i], "gen_error", (acc_array[i]-acc_array_train[i])
+                print "iteration Accuracy", acc_array[i],  "Train", acc_array_train[i], "gen_error", (acc_array[i]-acc_array_train[i])
 
-		# model.Summaries['test_writer'].add_summary(summary, i)
+                # model.Summaries['test_writer'].add_summary(summary, i)
                 if max(acc_array) > 0.99:
                     summary, pr  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['prob'] ], \
                     feed_dict = { model.Deep['FL_layer0']: Noise_data, model.classifier['Target']: y_test} )
@@ -149,15 +149,15 @@ def Analyse_custom_Optimizer_GDR_old(X_train, y_train, X_test, y_test, kappa):
 
             if i % 1 == 0:
 
-		summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
+                summary, acc_array[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict = {model.Deep['FL_layer0']: Noise_data, model.classifier['Target']: y_test})
 
-		summary, acc_array_train[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
+                summary, acc_array_train[i]  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['accuracy'] ],\
                 feed_dict = {model.Deep['FL_layer0']: X_train, model.classifier['Target']: y_train})
 
                 print "Accuracy", acc_array[i],  acc_array_train[i], "gen_error", (acc_array[i]-acc_array_train[i])
 
-		# model.Summaries['test_writer'].add_summary(summary, i)
+                # model.Summaries['test_writer'].add_summary(summary, i)
                 if max(acc_array) > 0.99:
                     summary, pr  = model.sess.run( [ model.Summaries['merged'], model.Evaluation['prob'] ], \
                     feed_dict = { model.Deep['FL_layer0']: Noise_data, model.classifier['Target']: y_test} )
